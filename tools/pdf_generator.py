@@ -54,6 +54,16 @@ def generate_pdf(report_text: str) -> bytes:
                 pdf.multi_cell(0, 6, text=line)
         except Exception:
             fallback_line = line.encode("latin-1", "replace").decode("latin-1")
-            pdf.multi_cell(0, 6, text=fallback_line or " ")
+            try:
+                pdf.multi_cell(0, 6, text=fallback_line or " ")
+            except Exception:
+                # Fallback for extremely long strings (like URLs/tracebacks) that exceed page width
+                import textwrap
+                wrapped = textwrap.wrap(fallback_line, width=80, break_long_words=True)
+                for w_line in wrapped:
+                    try:
+                        pdf.multi_cell(0, 6, text=w_line)
+                    except Exception:
+                        pass
 
     return bytes(pdf.output(dest="S"))

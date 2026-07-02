@@ -6,11 +6,11 @@ the exact same way. Keeps the agent files short and simple.
 """
 
 import os
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 
 
-class GeminiFallbackWrapper:
-    """Wraps the Gemini client and falls back to a simple response on quota errors."""
+class GroqFallbackWrapper:
+    """Wraps the Groq client and falls back to a simple response on quota errors."""
 
     def __init__(self, inner_model):
         self.inner_model = inner_model
@@ -44,16 +44,17 @@ class GeminiFallbackWrapper:
 
 def get_llm(temperature: float = 0.3):
     """Returns a ready-to-use chat model."""
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError(
-            "GEMINI_API_KEY not found! Please make sure you have created a .env file "
-            "(you can rename .env.example) and added your Gemini API key."
+            "GROQ_API_KEY not found! Please make sure you have created a .env file "
+            "(you can rename .env.example) and added your Groq API key."
         )
 
-    inner_model = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+    inner_model = ChatGroq(
+        model="llama-3.3-70b-versatile",  # Updated: llama3-8b-8192 was decommissioned
         temperature=temperature,
-        google_api_key=api_key,
+        groq_api_key=api_key,
+        streaming=True
     )
-    return GeminiFallbackWrapper(inner_model)
+    return GroqFallbackWrapper(inner_model)
