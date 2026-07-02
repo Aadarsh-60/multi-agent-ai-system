@@ -1,0 +1,11 @@
+langgraph==0.2.39
+langchain==0.3.7
+langchain-google-genai
+tavily-python==0.5.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+python-dotenv==1.0.1
+fpdf2
+chromadb
+posthog<3.0.0
+schedule==1.2.1

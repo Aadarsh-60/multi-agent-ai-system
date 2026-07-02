@@ -1,0 +1,33 @@
+# Python-generated files
+**/__pycache__/
+*.py[cod]
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Environment variables
+.env    
+
+# Virtual environments
+.venv
+
+# VS Code settings
+.vscode/
+
+# Node modules
+node_modules/
+
+
+# Build artifacts
+build/
+dist/
+
+# os
+.DS_Store
+
+# Chroma Vector DB
+chroma_db/
+
+.pytest_cache/
