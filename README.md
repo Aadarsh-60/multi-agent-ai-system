@@ -4,6 +4,13 @@ A modern, highly capable multi-agent application that turns a user request into 
 
 The application is built on a unified **Streamlit** architecture, featuring a premium dark-mode UI, human-in-the-loop control, real-time status tracking, automated database querying, Slack notifications, and PDF report generation.
 
+
+# 🚀 AI Multi-Agent Research System
+
+### 🌐 Live Demo
+https://multi-agent-ai-system-abqntnv6lwbe7o4rjebluw.streamlit.app/
+
+
 ## 🚀 Key Features
 
 - **5-Agent Pipeline:** Planner → Researcher → Coder → Reviewer → Reporter.
