@@ -29,7 +29,7 @@ CSS = """
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: var(--navy) !important; color: #fff !important; font-family: 'Inter', sans-serif !important; }
-#MainMenu, footer, header, [data-testid="stToolbar"], [data-testid="collapsedControl"], [data-testid="stDecoration"], section[data-testid="stSidebar"] { display: none !important; }
+#MainMenu, footer, header, [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
 .block-container, [data-testid="stMainBlockContainer"] { padding: 40px !important; max-width: 1400px !important; margin: 0 auto; }
 ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--gold2); border-radius: 2px; }
 
@@ -139,7 +139,7 @@ div[data-testid="column"]:has(.report-box-marker) {
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ── HUMAN-IN-THE-LOOP CHAT SIDEBAR ──
+# ── SIDEBAR ──
 with st.sidebar:
     st.markdown("## 💬 Chat with Agents")
     st.markdown("Ask questions or request quick revisions directly from any agent.", help="You can interact with agents outside the automated pipeline.")
@@ -196,7 +196,7 @@ def render_vertical_pipeline():
     return html
 
 # --- LAYOUT SETUP ---
-col_left, col_right = st.columns([1.6, 1], gap="large")
+col_empty, col_center, col_right = st.columns([1.5, 4, 1.5], gap="large")
 
 with col_right:
     pipeline_placeholder = st.empty()
@@ -205,8 +205,8 @@ with col_right:
 def update_pipeline_ui():
     pipeline_placeholder.markdown(render_vertical_pipeline(), unsafe_allow_html=True)
 
-left_col_container = col_left.container()
-bottom_container = st.container()
+left_col_container = col_center.container()
+bottom_container = col_center.container()
 
 with left_col_container:
     st.markdown("""
@@ -248,189 +248,189 @@ with left_col_container:
                 st.error("Please enter a task.")
 
 
-if stage != 'idle':
-    with bottom_container:
-        st.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
-        _, center_col, _ = st.columns([1.5, 5, 1.5])
-        with center_col:
-            # ── PLANNING ──
-            if stage == "planning":
-                st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">🧠 Generating Structured Plan...</div></div></div>', unsafe_allow_html=True)
-                p = memory.recall_past_runs(st.session_state.task)
-                plan_ph = st.empty()
-                plan = plan_ph.write_stream(run_planner(st.session_state.task, st.session_state.feedback, p))
-                st.session_state.plan = plan
-                st.session_state.statuses["Planner"] = "done"
+with left_col_container:
+    # ── PLANNING ──
+    if stage == "planning":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">🧠 Generating Structured Plan...</div></div></div>', unsafe_allow_html=True)
+        p = memory.recall_past_runs(st.session_state.task)
+        plan_ph = st.empty()
+        plan = plan_ph.write_stream(run_planner(st.session_state.task, st.session_state.feedback, p))
+        st.session_state.plan = plan
+        st.session_state.statuses["Planner"] = "done"
+        st.session_state.stage = "plan_ready"
+        st.rerun()
+
+    # ── PLAN READY ──
+    elif stage == "plan_ready":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("### 📋 Proposed Plan")
+            st.markdown(st.session_state.plan)
+
+        c1, c2 = st.columns(2, gap="medium")
+        with c1:
+            if st.button("✅ Approve & Run", type="primary", key="app"):
+                st.session_state.statuses["Researcher"] = "running"
+                st.session_state.stage = "running"
+                st.rerun()
+        with c2:
+            if st.button("✏️ Reject & Revise", key="rej"):
+                st.session_state.stage = "rejected"
+                st.rerun()
+
+    # ── REJECTED ──
+    elif stage == "rejected":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("### 📋 Proposed Plan")
+            st.markdown(st.session_state.plan)
+        fb = st.text_area("What should change?", placeholder="e.g. Use TypeScript, add error handling…", height=100, key="fb")
+
+        c1, c2 = st.columns(2, gap="medium")
+        with c1:
+            if st.button("🔄 Re-Plan", type="primary", key="rp"):
+                if fb.strip():
+                    st.session_state.feedback = fb.strip() 
+                    st.session_state.statuses["Planner"] = "running"
+                    st.session_state.stage = "planning"
+                    st.rerun()
+                else: 
+                    st.error("Enter feedback first.")
+        with c2:
+            if st.button("← Back", key="bk"):
                 st.session_state.stage = "plan_ready"
                 st.rerun()
 
-            # ── PLAN READY ──
-            elif stage == "plan_ready":
-                st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-                st.markdown(f'''
-                <div class="plan-card">
-                    <div class="plan-hdr">
-                        <div class="plan-title">📋 Proposed Plan</div>
-                    </div>
-                    <div class="plan-body">{st.session_state.plan}</div>
-                </div>
-                ''', unsafe_allow_html=True)
+    # ── RUNNING ──
+    elif stage == "running":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("### 📋 Approved Plan")
+            st.markdown(st.session_state.plan)
 
-                c1, c2 = st.columns(2, gap="medium")
-                with c1:
-                    if st.button("✅ Approve & Run", type="primary", key="app"):
-                        st.session_state.statuses["Researcher"] = "running"
-                        st.session_state.stage = "running"
-                        st.rerun()
-                with c2:
-                    if st.button("✏️ Reject & Revise", key="rej"):
-                        st.session_state.stage = "rejected"
-                        st.rerun()
+        res_ph = st.empty()
+        cod_ph = st.empty()
+        rev_ph = st.empty()
+        line_ph = st.empty()
+        report_title_ph = st.empty()
+        report_box_ph = st.empty()
 
-            # ── REJECTED ──
-            elif stage == "rejected":
-                st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="plan-card"><div class="plan-body">{st.session_state.plan}</div></div>', unsafe_allow_html=True)
-                fb = st.text_area("What should change?", placeholder="e.g. Use TypeScript, add error handling…", height=100, key="fb")
+        prog = st.progress(0)
+        stat = st.empty()
 
-                c1, c2 = st.columns(2, gap="medium")
-                with c1:
-                    if st.button("🔄 Re-Plan", type="primary", key="rp"):
-                        if fb.strip():
-                            st.session_state.feedback = fb.strip() 
-                            st.session_state.statuses["Planner"] = "running"
-                            st.session_state.stage = "planning"
-                            st.rerun()
-                        else: 
-                            st.error("Enter feedback first.")
-                with c2:
-                    if st.button("← Back", key="bk"):
-                        st.session_state.stage = "plan_ready"
-                        st.rerun()
+        def go(n, s): 
+            st.session_state.statuses[n] = s
+            update_pipeline_ui()
 
-            # ── RUNNING ──
-            elif stage == "running":
-                st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">📋 Approved Plan</div></div><div class="plan-body">{st.session_state.plan}</div></div>', unsafe_allow_html=True)
+        # Step 1: Research
+        stat.info("🔍 Researcher — gathering info…")
+        prog.progress(20)
+        with res_ph.expander("🔍 Research Notes", expanded=True):
+            notes = st.write_stream(run_researcher(st.session_state.task, st.session_state.plan))
+        st.session_state.research_notes = notes
+        go("Researcher", "done")
+        go("Coder", "running")
 
-                res_ph = st.empty()
-                cod_ph = st.empty()
-                rev_ph = st.empty()
-                line_ph = st.empty()
-                report_title_ph = st.empty()
-                report_box_ph = st.empty()
+        # Step 2: Code
+        stat.info("💻 Coder — writing solution…")
+        prog.progress(45)
+        # Truncate to avoid 8k token limit
+        notes_safe = notes[:6000] if notes else ""
+        with cod_ph.expander("📄 Code Payload", expanded=True):
+            code = st.write_stream(run_coder(st.session_state.task, st.session_state.plan, notes_safe))
+        st.session_state.code = code
+        go("Coder", "done")
+        go("Reviewer", "running")
 
-                prog = st.progress(0)
-                stat = st.empty()
+        # Step 3: Review
+        stat.info("🔎 Reviewer — reviewing code…")
+        prog.progress(70)
+        code_safe = code[:6000] if code else ""
+        with rev_ph.expander("🔎 Reviewer Feedback", expanded=True):
+            rev = st.write_stream(run_reviewer(st.session_state.task, code_safe))
+        st.session_state.review_feedback = rev
+        go("Reviewer", "done")
+        go("Reporter", "running")
 
-                def go(n, s): 
-                    st.session_state.statuses[n] = s
-                    update_pipeline_ui()
+        line_ph.markdown('<hr class="divider-line">', unsafe_allow_html=True)
+        report_title_ph.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
 
-                # Step 1: Research
-                stat.info("🔍 Researcher — gathering info…")
-                prog.progress(20)
-                with res_ph.expander("🔍 Research Notes", expanded=True):
-                    notes = st.write_stream(run_researcher(st.session_state.task, st.session_state.plan))
-                st.session_state.research_notes = notes
-                go("Researcher", "done")
-                go("Coder", "running")
+        with report_box_ph.container():
+            st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
+            stat.info("📝 Reporter — writing final report…")
+            prog.progress(90)
+            rev_safe = rev[:3000] if rev else ""
+            rpt = st.write_stream(run_reporter(st.session_state.task, st.session_state.plan, notes_safe, code_safe, rev_safe))
+            st.session_state.final_report = rpt 
+            memory.save_run(st.session_state.task, rpt)
+            notify_run_finished(st.session_state.task, rpt)
 
-                # Step 2: Code
-                stat.info("💻 Coder — writing solution…")
-                prog.progress(45)
-                with cod_ph.expander("📄 Code Payload", expanded=True):
-                    code = st.write_stream(run_coder(st.session_state.task, st.session_state.plan, notes))
-                st.session_state.code = code
-                go("Coder", "done")
-                go("Reviewer", "running")
+        go("Reporter", "done")
+        prog.progress(100)
+        time.sleep(0.3)
+        stat.empty()
+        prog.empty()
+        st.session_state.stage = "done"
+        st.rerun()
 
-                # Step 3: Review
-                stat.info("🔎 Reviewer — reviewing code…")
-                prog.progress(70)
-                with rev_ph.expander("🔎 Reviewer Feedback", expanded=True):
-                    rev = st.write_stream(run_reviewer(st.session_state.task, code))
-                st.session_state.review_feedback = rev
-                go("Reviewer", "done")
-                go("Reporter", "running")
+    # ── DONE ──
+    elif stage == "done":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("### 📋 Approved Plan")
+            st.markdown(st.session_state.plan)
 
-                line_ph.markdown('<hr class="divider-line">', unsafe_allow_html=True)
-                report_title_ph.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
+        # Expanders explicitly set to Open
+        with st.expander("🔍 Research Notes", expanded=True): 
+            st.markdown(st.session_state.research_notes)
+        with st.expander("📄 Code Payload", expanded=True): 
+            st.code(st.session_state.code, language="python")
+        with st.expander("🔎 Reviewer Feedback", expanded=True): 
+            st.markdown(st.session_state.review_feedback)
 
-                with report_box_ph.container():
-                    st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
-                    stat.info("📝 Reporter — writing final report…")
-                    prog.progress(90)
-                    rpt = st.write_stream(run_reporter(st.session_state.task, st.session_state.plan, notes, code, rev))
-                    st.session_state.final_report = rpt 
-                    memory.save_run(st.session_state.task, rpt)
-                    notify_run_finished(st.session_state.task, rpt)
+        st.markdown('<hr class="divider-line">', unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
 
-                go("Reporter", "done")
-                prog.progress(100)
-                time.sleep(0.3)
-                stat.empty()
-                prog.empty()
-                st.session_state.stage = "done"
+        # 🎯 Centered Output Logic with Hide Toggle 🎯
+        if not st.session_state.hide_report:
+            st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
+            st.markdown(st.session_state.final_report)
+        else:
+            st.info("👁️ The final report is currently hidden. Click 'Show Report' below to reveal it.")
+
+        # 🎯 4 Actions Buttons Centered under the Report 🎯
+        btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([1, 1, 1, 1])
+
+        with btn_col1:
+            st.download_button(
+                label="⬇️ Download final Report (Markdown)",
+                data=st.session_state.final_report,
+                file_name="final_report.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+
+        with btn_col2:
+            st.download_button(
+                label="⬇️ Download final Report (PDF)",
+                data=generate_pdf(st.session_state.final_report),
+                file_name="final_report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
+        with btn_col3:
+            hide_btn_label = "👁️ Show final Report" if st.session_state.hide_report else "👁️ Hide final Report"
+            if st.button(hide_btn_label, use_container_width=True):
+                st.session_state.hide_report = not st.session_state.hide_report
                 st.rerun()
 
-            # ── DONE ──
-            elif stage == "done":
-                st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">📋 Approved Plan</div></div><div class="plan-body">{st.session_state.plan}</div></div>', unsafe_allow_html=True)
-
-                # Expanders explicitly set to Open
-                with st.expander("🔍 Research Notes", expanded=True): 
-                    st.markdown(st.session_state.research_notes)
-                with st.expander("📄 Code Payload", expanded=True): 
-                    st.code(st.session_state.code, language="python")
-                with st.expander("🔎 Reviewer Feedback", expanded=True): 
-                    st.markdown(st.session_state.review_feedback)
-
-                st.markdown('<hr class="divider-line">', unsafe_allow_html=True)
-                st.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
-
-                # 🎯 Centered Output Logic with Hide Toggle 🎯
-                if not st.session_state.hide_report:
-                    st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
-                    st.markdown(st.session_state.final_report)
-                else:
-                    st.info("👁️ The final report is currently hidden. Click 'Show Report' below to reveal it.")
-
-                # 🎯 4 Actions Buttons Centered under the Report 🎯
-                st.markdown("<div style='height:32px'></div>", unsafe_allow_html=True)
-                btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([1, 1, 1, 1])
-
-                with btn_col1:
-                    st.download_button(
-                        label="⬇️ Download final Report (Markdown)",
-                        data=st.session_state.final_report,
-                        file_name="final_report.md",
-                        mime="text/markdown",
-                        use_container_width=True
-                    )
-
-                with btn_col2:
-                    st.download_button(
-                        label="⬇️ Download final Report (PDF)",
-                        data=generate_pdf(st.session_state.final_report),
-                        file_name="final_report.pdf",
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-
-                with btn_col3:
-                    hide_btn_label = "👁️ Show final Report" if st.session_state.hide_report else "👁️ Hide final Report"
-                    if st.button(hide_btn_label, use_container_width=True):
-                        st.session_state.hide_report = not st.session_state.hide_report
-                        st.rerun()
-
-                with btn_col4:
-                    if st.button("⚡ New Task", type="primary", key="nt", use_container_width=True):
-                        for k in ["task", "plan", "feedback", "research_notes", "code", "review_feedback", "final_report", "sel_topic"]:
-                            st.session_state[k] = ""
-                        st.session_state.hide_report = False
-                        st.session_state.stage = "idle"
-                        st.session_state.statuses = {n: "idle" for n, _ in AGENTS}
-                        st.rerun()
+        with btn_col4:
+            if st.button("⚡ New Task", type="primary", key="nt", use_container_width=True):
+                for k in ["task", "plan", "feedback", "research_notes", "code", "review_feedback", "final_report", "sel_topic"]:
+                    st.session_state[k] = ""
+                st.session_state.hide_report = False
+                st.session_state.stage = "idle"
+                st.session_state.statuses = {n: "idle" for n, _ in AGENTS}
+                st.rerun()
