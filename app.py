@@ -30,7 +30,7 @@ CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background: var(--navy) !important; color: #fff !important; font-family: 'Inter', sans-serif !important; }
 #MainMenu, footer, header, [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
-.block-container, [data-testid="stMainBlockContainer"] { padding: 40px !important; max-width: 1400px !important; margin: 0 auto; }
+.block-container, [data-testid="stMainBlockContainer"] { padding: 40px !important; max-width: 95% !important; margin: 0 auto; }
 ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--gold2); border-radius: 2px; }
 
 /* BRANDING & HERO */
@@ -196,7 +196,7 @@ def render_vertical_pipeline():
     return html
 
 # --- LAYOUT SETUP ---
-col_empty, col_center, col_right = st.columns([1.5, 4, 1.5], gap="large")
+col_left, col_right = st.columns([3.5, 1], gap="large")
 
 with col_right:
     pipeline_placeholder = st.empty()
@@ -205,8 +205,8 @@ with col_right:
 def update_pipeline_ui():
     pipeline_placeholder.markdown(render_vertical_pipeline(), unsafe_allow_html=True)
 
-left_col_container = col_center.container()
-bottom_container = col_center.container()
+left_col_container = col_left.container()
+bottom_container = col_left.container()
 
 with left_col_container:
     st.markdown("""
