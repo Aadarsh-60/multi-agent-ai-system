@@ -20,7 +20,7 @@ Review the code:
 2. Suggest concrete improvements.
 3. Give a short overall verdict (Good / Needs work).
 
-Keep the review short and to the point.
+Ensure your output is highly structured using clear markdown headings and bullet points.
 """
 
 
@@ -28,5 +28,4 @@ def run_reviewer(task: str, code: str) -> str:
     """Reviews the generated code and gives feedback."""
     llm = get_llm(temperature=0.2)
     prompt = REVIEW_PROMPT.format(task=task, code=code)
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.stream(prompt)

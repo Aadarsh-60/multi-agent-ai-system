@@ -39,5 +39,4 @@ def run_researcher(task: str, plan: str) -> str:
     prompt = RESEARCH_PROMPT.format(
         task=task, plan=plan, search_results=search_results
     )
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.stream(prompt)

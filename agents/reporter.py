@@ -45,5 +45,4 @@ def run_reporter(task, plan, research_notes, code, review_feedback) -> str:
         code=code,
         review_feedback=review_feedback,
     )
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.stream(prompt)

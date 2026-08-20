@@ -17,7 +17,23 @@ class GroqFallbackWrapper:
 
     def invoke(self, prompt: str):
         try:
-            return self.inner_model.invoke(prompt)
+            import re
+            response = self.inner_model.invoke(prompt)
+            if hasattr(response, "content") and isinstance(response.content, str):
+                response.content = re.sub(r'\n{3,}', '\n\n', response.content.strip())
+            return response
+
+    def stream(self, prompt: str):
+        try:
+            for chunk in self.inner_model.stream(prompt):
+                if hasattr(chunk, "content") and isinstance(chunk.content, str):
+                    yield chunk.content
+        except Exception as exc:
+            message = str(exc)
+            if "RESOURCE_EXHAUSTED" in message or "quota" in message.lower() or "429" in message:
+                yield self._fallback_response(prompt)
+            else:
+                raise
         except Exception as exc:
             message = str(exc)
             if "RESOURCE_EXHAUSTED" in message or "quota" in message.lower() or "429" in message:
@@ -52,7 +68,7 @@ def get_llm(temperature: float = 0.3):
         )
 
     inner_model = ChatGroq(
-        model="llama-3.3-70b-versatile",  # Updated: llama3-8b-8192 was decommissioned
+        model="openai/gpt-oss-120b",  # Updated to a model accessible with current API key
         temperature=temperature,
         groq_api_key=api_key,
         streaming=True

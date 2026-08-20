@@ -33,5 +33,4 @@ def run_coder(task: str, plan: str, research_notes: str) -> str:
     prompt = CODING_PROMPT.format(
         task=task, plan=plan, research_notes=research_notes
     )
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.stream(prompt)

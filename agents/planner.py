@@ -17,11 +17,13 @@ The user wants this done:
 Image file name: {image_name}
 
 Break this down into a short, numbered plan with 4-6 steps.
-Clearly separate:
-- what the Research Agent should look up
-- what the Coding Agent should build
+Clearly outline the responsibilities for each agent:
+- Research Agent: Information gathering and conceptual research
+- Coding Agent: Implementation and building the solution
+- Reviewer Agent: Code quality check, bug finding, and suggesting improvements
+- Reporter Agent: Compiling the final report and documenting the process
 
-Keep it short and easy to read.
+Ensure your output is highly structured using clear markdown headings and bullet points.
 """
 
 
@@ -37,6 +39,5 @@ def run_planner(task: str, feedback: str = "", past_context: str = "", image_nam
         # if the human rejected the last plan, include their feedback
         prompt += f"\n\nThe human reviewer asked for this change: {feedback}\nUpdate the plan accordingly."
 
-    response = llm.invoke(prompt)
-    return response.content
+    return llm.stream(prompt)
 
