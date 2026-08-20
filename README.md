@@ -15,20 +15,23 @@ https://multi-agent-ai-system-abqntnv6lwbe7o4rjebluw.streamlit.app/
 
 - **5-Agent Pipeline:** Planner → Researcher → Coder → Reviewer → Reporter.
 - **Human-in-the-Loop:** Explicitly approve or request revisions to the Planner's proposed execution plan before work begins.
-- **Unified Streamlit UI:** A stunning, responsive, single-page application built entirely in Python without separate frontend/backend layers.
+- **Unified Streamlit UI:** A stunning, wide-screen application with a beautifully centered output and right-side pipeline visualization.
+- **Real-Time Streaming:** Watch all agents type their output token-by-token in real-time for an engaging experience.
+- **Interactive Chat Sidebar:** Talk directly to any agent (Planner, Coder, etc.) on-the-fly to ask questions or request quick revisions.
 - **Intelligent Tooling:** 
   - **Tavily Search** for live web data.
-  - **Auto-SQL Tool** that dynamically spins up databases, writes queries, and executes them if your task involves data or databases.
+  - **Auto-SQL Tool** that dynamically spins up databases, writes queries, and executes them.
   - **Notifier** that sends the final completion message straight to your **Slack**.
-- **Memory:** Uses ChromaDB to persist run data and recall past runs so the agents learn from history.
-- **Exporting:** Download the final comprehensive report as raw Markdown or a perfectly formatted PDF.
+- **Auto Multi-Model Failover:** Built on Groq API with LangChain `.with_fallbacks()`—if a model hits rate limits, the system seamlessly shifts to fallback models (e.g. from gpt-oss-120b to Llama 3 to Mixtral) without crashing.
+- **Memory & Safeguards:** Uses ChromaDB for past run context and intelligent truncation to prevent API Token Exhaustion.
+- **Exporting:** Download the final structured report as Markdown or a perfectly formatted PDF.
 
 ## 🛠️ Tech Stack
 
 - **Python 3.11+**
 - **Streamlit** (UI & State Management)
-- **LangChain** (Agent orchestration)
-- **Grok API** (xAI LLM Engine)
+- **LangChain** (Agent orchestration & Failover)
+- **Groq API** (Llama 3, Mixtral, GPT-OSS)
 - **Tavily API** (Web Search)
 - **SQLite** (Database tool)
 - **ChromaDB** (Memory storage)
@@ -68,7 +71,7 @@ multi-agent-ai-system/
 4. **Configure Environment Variables:**
    Create a `.env` file in the root directory and add your API keys:
    ```env
-   XAI_API_KEY="your_grok_key_here"
+   GROQ_API_KEY="your_groq_key_here"
    TAVILY_API_KEY="your_tavily_key_here"
    SLACK_WEBHOOK_URL="your_slack_webhook_here"  # Optional: For Slack notifications
    ```
