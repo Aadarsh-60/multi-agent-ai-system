@@ -1,16 +1,24 @@
-from tools.llm import GeminiFallbackWrapper
+import unittest
+from tools.llm import GroqFallbackWrapper
 
 
-class RaisingModel:
+class MockResponse:
+    def __init__(self, content):
+        self.content = content
+
+
+class MockModel:
     def invoke(self, prompt):
-        raise RuntimeError("429 RESOURCE_EXHAUSTED: quota exceeded")
+        return MockResponse("This is a response\n\n\n\nwith extra newlines cleaned.")
 
 
-def test_fallback_wrapper_returns_plan_when_quota_error_occurs():
-    wrapper = GeminiFallbackWrapper(RaisingModel())
+class TestLLMFallbackWrapper(unittest.TestCase):
+    def test_fallback_wrapper_cleans_newlines(self):
+        wrapper = GroqFallbackWrapper(MockModel())
+        response = wrapper.invoke("Test prompt")
+        self.assertIn("extra newlines", response.content)
+        self.assertNotIn("\n\n\n", response.content)
 
-    response = wrapper.invoke("You are the Planner Agent. Task: build a spam detector")
 
-    assert response.content
-    assert "quota" in response.content.lower()
-    assert "plan" in response.content.lower()
+if __name__ == "__main__":
+    unittest.main()

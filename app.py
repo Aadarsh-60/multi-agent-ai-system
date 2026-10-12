@@ -2,14 +2,24 @@ import streamlit as st, time
 from dotenv import load_dotenv
 load_dotenv()
 
-from agents.planner    import run_planner
+from graph import graph, AgentState, route_after_planner, route_review_decision
+from graph.nodes import (
+    planner_node,
+    researcher_node,
+    coder_node,
+    execution_sandbox_node,
+    reviewer_node,
+    reporter_node
+)
+from agents.planner    import run_planner, check_research_needed
 from agents.researcher import run_researcher
 from agents.coder      import run_coder
-from agents.reviewer   import run_reviewer
+from agents.reviewer   import run_reviewer, parse_review_decision
 from agents.reporter   import run_reporter
+from tools.sandbox import run_code_in_sandbox, detect_code_language
 from memory.shared_memory import memory
 from tools.pdf_generator import generate_pdf
-from tools.notifier import notify_run_finished
+from tools.monitor import monitor
 
 st.set_page_config(page_title="AgentMind", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
@@ -168,16 +178,33 @@ with st.sidebar:
             st.session_state.chat_history.append({"role": "assistant", "content": response_text})
 
 AGENTS = [
-    ("Planner", "Plans subtasks"),
-    ("Researcher", "Gathers info"),
-    ("Coder", "Writes code"),
-    ("Reviewer", "Reviews code"),
-    ("Reporter", "Final report")
+    ("Planner", "Plan & research check"),
+    ("Researcher", "Web data & citations"),
+    ("Coder", "Generates solution"),
+    ("Sandbox", "Execution & validation"),
+    ("Reviewer", "Quality & safety check"),
+    ("Reporter", "Final deliverable")
 ]
 CHIPS = ["Write a Python Web Scraper", "Build a REST API in FastAPI", "Sort Algorithms Comparison", "ML Model for Sentiment Analysis", "Docker Setup for Node.js App"]
 
-# Initialize States (Added hide_report to track visibility toggle)
-for k, v in {"stage": "idle", "task": "", "plan": "", "feedback": "", "research_notes": "", "code": "", "review_feedback": "", "final_report": "", "sel_topic": "", "hide_report": False, "statuses": {n: "idle" for n, _ in AGENTS}}.items():
+# Initialize States
+init_states = {
+    "stage": "idle",
+    "task": "",
+    "plan": "",
+    "feedback": "",
+    "research_needed": True,
+    "human_approval": "approved",
+    "research_notes": "",
+    "code": "",
+    "execution_output": "",
+    "review_feedback": "",
+    "final_report": "",
+    "sel_topic": "",
+    "hide_report": False,
+    "statuses": {n: "idle" for n, _ in AGENTS}
+}
+for k, v in init_states.items():
     if k not in st.session_state: st.session_state[k] = v
 
 def render_vertical_pipeline():
@@ -213,10 +240,10 @@ with left_col_container:
     <div class="brand-container">
         <div class="brand">Agent<span>Mind</span></div>
     </div>
-    <div class="badge">⚡ MULTI-AGENT ENGINE</div>
+    <div class="badge">⚡ PRODUCTION WORKFLOW · LANGGRAPH</div>
     <div class="h1">Intelligent <span class="gold">automation,</span></div>
-    <div class="h1-sub">five agents thinking together.</div>
-    <div class="agents-list">PLANNER · RESEARCHER · CODER · REVIEWER · REPORTER</div>
+    <div class="h1-sub">multi-agent thinking with sandbox validation.</div>
+    <div class="agents-list">PLANNER · RESEARCHER · CODER · SANDBOX · REVIEWER · REPORTER</div>
     """, unsafe_allow_html=True)
 
     stage = st.session_state.stage
@@ -238,6 +265,7 @@ with left_col_container:
         
         if st.button("⚡ RUN AGENT PIPELINE →", type="primary", key="run"):
             if task.strip():
+                monitor.reset()
                 st.session_state.task = task.strip()
                 st.session_state.sel_topic = ""
                 st.session_state.hide_report = False
@@ -252,44 +280,60 @@ with left_col_container:
     # ── PLANNING ──
     if stage == "planning":
         st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">🧠 Generating Structured Plan...</div></div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="plan-card"><div class="plan-hdr"><div class="plan-title">🧠 2. Planner Agent — Generating Execution Plan & Research Assessment...</div></div></div>', unsafe_allow_html=True)
         p = memory.recall_past_runs(st.session_state.task)
         plan_ph = st.empty()
         plan = plan_ph.write_stream(run_planner(st.session_state.task, st.session_state.feedback, p))
         st.session_state.plan = plan
+        st.session_state.research_needed = check_research_needed(plan, st.session_state.task)
         st.session_state.statuses["Planner"] = "done"
         st.session_state.stage = "plan_ready"
         st.rerun()
 
-    # ── PLAN READY ──
+    # ── PLAN READY (STEP 3: HUMAN APPROVAL) ──
     elif stage == "plan_ready":
         st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
         with st.container(border=True):
-            st.markdown("### 📋 Proposed Plan")
+            st.markdown("### 📋 Proposed Execution Plan")
             st.markdown(st.session_state.plan)
+            if st.session_state.research_needed:
+                st.info("🔍 **Research Assessment**: External research evaluated as **Needed** (will query Tavily & gather documentation).")
+            else:
+                st.info("⚡ **Research Assessment**: Task is **Self-Contained** (will bypass Researcher and proceed directly to Coder).")
 
-        c1, c2 = st.columns(2, gap="medium")
+        st.markdown('<div class="lbl" style="margin-top:16px;">3. HUMAN APPROVAL</div>', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns([1.5, 1.2, 1], gap="medium")
         with c1:
-            if st.button("✅ Approve & Run", type="primary", key="app"):
-                st.session_state.statuses["Researcher"] = "running"
+            if st.button("✅ Approve Plan & Run", type="primary", key="app"):
+                st.session_state.human_approval = "approved"
+                if st.session_state.research_needed:
+                    st.session_state.statuses["Researcher"] = "running"
+                else:
+                    st.session_state.statuses["Coder"] = "running"
                 st.session_state.stage = "running"
                 st.rerun()
         with c2:
-            if st.button("✏️ Reject & Revise", key="rej"):
+            if st.button("✏️ Revise Plan (Feedback)", key="rej"):
+                st.session_state.human_approval = "revise"
                 st.session_state.stage = "rejected"
                 st.rerun()
+        with c3:
+            if st.button("❌ Reject & Cancel", key="canc"):
+                st.session_state.human_approval = "rejected"
+                st.session_state.stage = "cancelled"
+                st.rerun()
 
-    # ── REJECTED ──
+    # ── REJECTED (REVISE PLAN) ──
     elif stage == "rejected":
         st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
         with st.container(border=True):
             st.markdown("### 📋 Proposed Plan")
             st.markdown(st.session_state.plan)
-        fb = st.text_area("What should change?", placeholder="e.g. Use TypeScript, add error handling…", height=100, key="fb")
+        fb = st.text_area("What should change in the plan?", placeholder="e.g. Include SQLite schema, add error handling, use FastAPI instead…", height=100, key="fb")
 
         c1, c2 = st.columns(2, gap="medium")
         with c1:
-            if st.button("🔄 Re-Plan", type="primary", key="rp"):
+            if st.button("🔄 Re-Plan (Loop to Planner)", type="primary", key="rp"):
                 if fb.strip():
                     st.session_state.feedback = fb.strip() 
                     st.session_state.statuses["Planner"] = "running"
@@ -302,7 +346,22 @@ with left_col_container:
                 st.session_state.stage = "plan_ready"
                 st.rerun()
 
-    # ── RUNNING ──
+    # ── CANCELLED (REJECTED BY USER) ──
+    elif stage == "cancelled":
+        st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
+        st.error("❌ Workflow Cancelled (Rejected by User upon plan review).")
+        with st.container(border=True):
+            st.markdown("### 📋 Rejected Plan Proposal")
+            st.markdown(st.session_state.plan)
+        if st.button("⚡ Start New Task", type="primary", key="new_from_cancel"):
+            for k in ["task", "plan", "feedback", "research_notes", "code", "execution_output", "review_feedback", "final_report", "sel_topic"]:
+                st.session_state[k] = ""
+            st.session_state.hide_report = False
+            st.session_state.stage = "idle"
+            st.session_state.statuses = {n: "idle" for n, _ in AGENTS}
+            st.rerun()
+
+    # ── RUNNING (LANGGRAPH PIPELINE EXECUTION) ──
     elif stage == "running":
         st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
         with st.container(border=True):
@@ -311,6 +370,7 @@ with left_col_container:
 
         res_ph = st.empty()
         cod_ph = st.empty()
+        sandbox_ph = st.empty()
         rev_ph = st.empty()
         line_ph = st.empty()
         report_title_ph = st.empty()
@@ -323,48 +383,145 @@ with left_col_container:
             st.session_state.statuses[n] = s
             update_pipeline_ui()
 
-        # Step 1: Research
-        stat.info("🔍 Researcher — gathering info…")
-        prog.progress(20)
-        with res_ph.expander("🔍 Research Notes", expanded=True):
-            notes = st.write_stream(run_researcher(st.session_state.task, st.session_state.plan))
-        st.session_state.research_notes = notes
-        go("Researcher", "done")
-        go("Coder", "running")
+        # LangGraph State Initialization
+        graph_state: AgentState = {
+            "task": st.session_state.task,
+            "plan": st.session_state.plan,
+            "past_context": memory.recall_past_runs(st.session_state.task),
+            "research_needed": st.session_state.get("research_needed", True),
+            "research_notes": "",
+            "research_feedback": "",
+            "code": "",
+            "execution_output": "",
+            "review_feedback": "",
+            "review_decision": "approved",
+            "final_report": "",
+            "iteration_count": 0,
+            "max_iterations": 2,
+            "status": "running"
+        }
 
-        # Step 2: Code
-        stat.info("💻 Coder — writing solution…")
-        prog.progress(45)
-        # Truncate to avoid 8k token limit
-        notes_safe = notes[:6000] if notes else ""
-        with cod_ph.expander("📄 Code Payload", expanded=True):
-            code = st.write_stream(run_coder(st.session_state.task, st.session_state.plan, notes_safe))
-        st.session_state.code = code
-        go("Coder", "done")
-        go("Reviewer", "running")
+        # Step 4: Research Check & Step 4A: Researcher Agent
+        if graph_state["research_needed"]:
+            stat.info("🔍 4A. Researcher Agent — Gathering relevant information & source links…")
+            prog.progress(15)
+            go("Researcher", "running")
+            with res_ph.expander("🔍 4A. Research Notes & Sources", expanded=True):
+                notes = st.write_stream(run_researcher(graph_state["task"], graph_state["plan"], graph_state.get("research_feedback", "")))
+            graph_state["research_notes"] = notes
+            st.session_state.research_notes = notes
+            go("Researcher", "done")
+        else:
+            stat.info("⏩ 4. Research Check — External research evaluated as not needed; proceeding to Coder.")
+            prog.progress(15)
+            graph_state["research_notes"] = "Self-contained task; external research was bypassed."
+            st.session_state.research_notes = graph_state["research_notes"]
+            with res_ph.expander("🔍 4. Research Check", expanded=False):
+                st.markdown("*Task is self-contained. External web research was bypassed.*")
+            go("Researcher", "done")
 
-        # Step 3: Review
-        stat.info("🔎 Reviewer — reviewing code…")
-        prog.progress(70)
-        code_safe = code[:6000] if code else ""
-        with rev_ph.expander("🔎 Reviewer Feedback", expanded=True):
-            rev = st.write_stream(run_reviewer(st.session_state.task, code_safe))
-        st.session_state.review_feedback = rev
-        go("Reviewer", "done")
+        # Step 5 -> Step 6 -> Step 7 -> Step 8 Loop
+        while True:
+            iteration = graph_state.get("iteration_count", 0)
+            iter_suffix = f" (Attempt {iteration + 1})" if iteration > 0 else ""
+
+            # Step 5: Coder Agent
+            stat.info(f"💻 5. Coder Agent — Writing executable solution{iter_suffix}…")
+            prog.progress(35 if iteration == 0 else 45)
+            go("Coder", "running")
+
+            coder_task = graph_state["task"]
+            execution_feedback = ""
+            if iteration > 0 and (graph_state.get("review_feedback") or graph_state.get("execution_output")):
+                execution_feedback = (
+                    f"Review Critique:\n{graph_state.get('review_feedback', '')[:2500]}\n\n"
+                    f"Sandbox Execution Output:\n{graph_state.get('execution_output', '')[:2500]}"
+                )
+
+            notes_safe = graph_state["research_notes"][:6000] if graph_state.get("research_notes") else ""
+            with cod_ph.expander(f"📄 5. Code Payload{iter_suffix}", expanded=True):
+                code = st.write_stream(run_coder(coder_task, graph_state["plan"], notes_safe, execution_feedback))
+            graph_state["code"] = code
+            st.session_state.code = code
+            go("Coder", "done")
+
+            # Step 6: Execution & Validation (Sandbox)
+            stat.info(f"⚙️ 6. Execution & Validation — Running code in sandbox{iter_suffix}…")
+            prog.progress(55)
+            go("Sandbox", "running")
+            sandbox_res = run_code_in_sandbox(code, timeout_seconds=15)
+            exec_formatted = (
+                f"Status: {sandbox_res.get('summary')}\n"
+                f"Exit Code: {sandbox_res.get('exit_code')}\n"
+                f"--- STDOUT ---\n{sandbox_res.get('stdout', '') or '(empty)'}\n"
+                f"--- STDERR ---\n{sandbox_res.get('stderr', '') or '(empty)'}"
+            )
+            graph_state["execution_output"] = exec_formatted
+            st.session_state.execution_output = exec_formatted
+            with sandbox_ph.expander(f"⚙️ 6. Execution & Validation (Sandbox){iter_suffix}", expanded=True):
+                if sandbox_res.get("success"):
+                    st.success(f"✅ {sandbox_res.get('summary')}")
+                else:
+                    st.warning(f"⚠️ {sandbox_res.get('summary')}")
+                st.code(exec_formatted, language="text")
+            go("Sandbox", "done")
+
+            # Step 7: Reviewer Agent
+            stat.info(f"🔎 7. Reviewer Agent — Evaluating correctness, quality & safety{iter_suffix}…")
+            prog.progress(70)
+            go("Reviewer", "running")
+            code_safe = code[:6000] if code else ""
+            with rev_ph.expander(f"🔎 7. Reviewer Feedback & Decision{iter_suffix}", expanded=True):
+                rev = st.write_stream(run_reviewer(graph_state["task"], code_safe, exec_formatted, graph_state["plan"]))
+            graph_state["review_feedback"] = rev
+            st.session_state.review_feedback = rev
+
+            decision = parse_review_decision(rev)
+            graph_state["review_decision"] = decision
+            graph_state["iteration_count"] = iteration + 1
+            go("Reviewer", "done")
+
+            # Step 8: Review Decision Routing
+            next_route = route_review_decision(graph_state)
+            if next_route == "coder":
+                stat.warning(f"🔁 8. Review Decision: Need Changes! Looping back to Coder with critique and sandbox results (Attempt {graph_state['iteration_count'] + 1})...")
+                time.sleep(1.2)
+                go("Coder", "running")
+                continue
+            elif next_route == "researcher":
+                stat.warning(f"🔁 8. Review Decision: More Research Needed! Looping back to Researcher for missing documentation...")
+                time.sleep(1.2)
+                go("Researcher", "running")
+                with res_ph.expander(f"🔍 4A. Supplementary Research (Attempt {graph_state['iteration_count'] + 1})", expanded=True):
+                    extra_notes = st.write_stream(run_researcher(graph_state["task"], graph_state["plan"], rev[:1500]))
+                graph_state["research_notes"] += f"\n\n--- Supplementary Research ---\n{extra_notes}"
+                st.session_state.research_notes = graph_state["research_notes"]
+                go("Researcher", "done")
+                go("Coder", "running")
+                continue
+            else:
+                stat.success("✅ 8. Review Decision: Approved! Proceeding to Reporter Agent.")
+                time.sleep(0.5)
+                break
+
+        # Step 9: Reporter Agent
         go("Reporter", "running")
-
         line_ph.markdown('<hr class="divider-line">', unsafe_allow_html=True)
-        report_title_ph.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
+        report_title_ph.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ 9. FINAL DELIVERABLE & REPORT</div>', unsafe_allow_html=True)
 
         with report_box_ph.container():
             st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
-            stat.info("📝 Reporter — writing final report…")
+            stat.info("📝 9. Reporter Agent — Writing comprehensive report & deliverable…")
             prog.progress(90)
-            rev_safe = rev[:3000] if rev else ""
-            rpt = st.write_stream(run_reporter(st.session_state.task, st.session_state.plan, notes_safe, code_safe, rev_safe))
+            notes_safe = graph_state.get("research_notes", "")[:6000]
+            code_safe = graph_state.get("code", "")[:6000]
+            rev_safe = graph_state.get("review_feedback", "")[:3000]
+            exec_safe = graph_state.get("execution_output", "")[:2500]
+
+            rpt = st.write_stream(run_reporter(graph_state["task"], graph_state["plan"], notes_safe, code_safe, rev_safe, exec_safe))
+            graph_state["final_report"] = rpt
             st.session_state.final_report = rpt 
-            memory.save_run(st.session_state.task, rpt)
-            notify_run_finished(st.session_state.task, rpt)
+            memory.save_run(graph_state["task"], rpt)
 
         go("Reporter", "done")
         prog.progress(100)
@@ -374,7 +531,7 @@ with left_col_container:
         st.session_state.stage = "done"
         st.rerun()
 
-    # ── DONE ──
+    # ── 10. END FINAL OUTPUT ──
     elif stage == "done":
         st.markdown(f'<div class="task-title">{st.session_state.task}</div>', unsafe_allow_html=True)
         with st.container(border=True):
@@ -382,29 +539,49 @@ with left_col_container:
             st.markdown(st.session_state.plan)
 
         # Expanders explicitly set to Open
-        with st.expander("🔍 Research Notes", expanded=True): 
+        with st.expander("🔍 Research Notes & Sources", expanded=True): 
             st.markdown(st.session_state.research_notes)
-        with st.expander("📄 Code Payload", expanded=True): 
-            st.code(st.session_state.code, language="python")
-        with st.expander("🔎 Reviewer Feedback", expanded=True): 
+        with st.expander("📄 Generated Code Solution", expanded=True): 
+            detected_lang = detect_code_language(st.session_state.code)
+            st.code(st.session_state.code, language=detected_lang)
+        with st.expander("⚙️ Execution & Validation (Sandbox)", expanded=True):
+            st.code(st.session_state.execution_output, language="text")
+        with st.expander("🔎 Reviewer Evaluation & Decision", expanded=True): 
             st.markdown(st.session_state.review_feedback)
 
-        st.markdown('<hr class="divider-line">', unsafe_allow_html=True)
-        st.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ FINAL REPORT</div>', unsafe_allow_html=True)
+        # Telemetry & Observability Metrics Card
+        metrics = monitor.get_summary()
+        st.markdown('<div class="lbl" style="margin-top:20px;">📊 PIPELINE OBSERVABILITY & PERFORMANCE</div>', unsafe_allow_html=True)
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("Total Tokens", f"{metrics['total_tokens']:,}", f"{metrics['input_tokens']:,} in / {metrics['output_tokens']:,} out")
+        with m2:
+            st.metric("Execution Latency", f"{metrics['total_latency_seconds']}s")
+        with m3:
+            st.metric("Estimated Cost", f"${metrics['estimated_cost_usd']:.4f} USD")
+        with m4:
+            err_label = "0 Errors" if metrics['error_count'] == 0 else f"{metrics['error_count']} Errors"
+            st.metric("Pipeline Status", "Operational", err_label)
 
-        # 🎯 Centered Output Logic with Hide Toggle 🎯
+        with st.expander("🔍 Observability Debug Traces & Node Metrics", expanded=False):
+            st.text(monitor.get_debug_trace())
+
+        st.markdown('<hr class="divider-line">', unsafe_allow_html=True)
+        st.markdown('<div style="text-align:center;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:24px;letter-spacing:2px;">✦ 10. FINAL REPORT</div>', unsafe_allow_html=True)
+
+        # Centered Output Box
         if not st.session_state.hide_report:
             st.markdown('<div class="report-box-marker"></div>', unsafe_allow_html=True)
             st.markdown(st.session_state.final_report)
         else:
             st.info("👁️ The final report is currently hidden. Click 'Show Report' below to reveal it.")
 
-        # 🎯 4 Actions Buttons Centered under the Report 🎯
+        # Action Buttons
         btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([1, 1, 1, 1])
 
         with btn_col1:
             st.download_button(
-                label="⬇️ Download final Report (Markdown)",
+                label="⬇️ Download Markdown",
                 data=st.session_state.final_report,
                 file_name="final_report.md",
                 mime="text/markdown",
@@ -413,7 +590,7 @@ with left_col_container:
 
         with btn_col2:
             st.download_button(
-                label="⬇️ Download final Report (PDF)",
+                label="⬇️ Download PDF",
                 data=generate_pdf(st.session_state.final_report),
                 file_name="final_report.pdf",
                 mime="application/pdf",
@@ -421,14 +598,14 @@ with left_col_container:
             )
 
         with btn_col3:
-            hide_btn_label = "👁️ Show final Report" if st.session_state.hide_report else "👁️ Hide final Report"
+            hide_btn_label = "👁️ Show Report" if st.session_state.hide_report else "👁️ Hide Report"
             if st.button(hide_btn_label, use_container_width=True):
                 st.session_state.hide_report = not st.session_state.hide_report
                 st.rerun()
 
         with btn_col4:
             if st.button("⚡ New Task", type="primary", key="nt", use_container_width=True):
-                for k in ["task", "plan", "feedback", "research_notes", "code", "review_feedback", "final_report", "sel_topic"]:
+                for k in ["task", "plan", "feedback", "research_notes", "code", "execution_output", "review_feedback", "final_report", "sel_topic"]:
                     st.session_state[k] = ""
                 st.session_state.hide_report = False
                 st.session_state.stage = "idle"

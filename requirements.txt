@@ -1,3 +1,5 @@
+streamlit>=1.39.0
+requests>=2.31.0
 langgraph==0.2.39
 langchain==0.3.7
 langchain-groq
@@ -8,4 +10,3 @@ python-dotenv==1.0.1
 fpdf2
 chromadb
 posthog<3.0.0
-schedule==1.2.1

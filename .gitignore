@@ -29,5 +29,7 @@ dist/
 
 # Chroma Vector DB
 chroma_db/
+logs/
+*.log
 
 .pytest_cache/
